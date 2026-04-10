@@ -93,7 +93,7 @@ enum RenameService {
 
         for entry in plan {
             let dir = entry.url.deletingLastPathComponent()
-            var dest = dir.appendingPathComponent(entry.newName)
+            let dest = dir.appendingPathComponent(entry.newName)
             if dest == entry.url {
                 applied.append(entry.url)
                 continue

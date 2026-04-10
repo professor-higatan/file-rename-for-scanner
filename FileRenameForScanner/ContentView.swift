@@ -41,6 +41,11 @@ struct ContentView: View {
                 }
             )
         }
+        .overlay {
+            if vm.isRunningOCR {
+                OCRProgressOverlay(vm: vm)
+            }
+        }
     }
 
     private func presentRenameConfirmation() {
@@ -241,11 +246,6 @@ struct ContentView: View {
                     vm.runOCROnSelection()
                 }
                 .disabled(vm.isRunningOCR || vm.files.filter(\.isSelected).isEmpty)
-
-                if vm.isRunningOCR {
-                    ProgressView()
-                        .scaleEffect(0.85)
-                }
             }
 
             HStack(spacing: 8) {
@@ -301,11 +301,18 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            ForEach($vm.structureRules) { $rule in
+            ForEach(vm.structureRules) { rule in
                 StructureRuleEditor(
-                    rule: $rule,
-                    onDelete: { vm.removeRule(id: rule.wrappedValue.id) },
-                    onFillFromSelection: { vm.applySelectionRangeToRule(ruleID: rule.wrappedValue.id) }
+                    rule: Binding(
+                        get: { vm.structureRules.first(where: { $0.id == rule.id }) ?? rule },
+                        set: { newValue in
+                            if let i = vm.structureRules.firstIndex(where: { $0.id == rule.id }) {
+                                vm.structureRules[i] = newValue
+                            }
+                        }
+                    ),
+                    onDelete: { vm.removeRule(id: rule.id) },
+                    onFillFromSelection: { vm.applySelectionRangeToRule(ruleID: rule.id) }
                 )
             }
 
@@ -337,6 +344,40 @@ struct ContentView: View {
             TextField("", text: text)
                 .textFieldStyle(.roundedBorder)
         }
+    }
+}
+
+// MARK: - OCR 進捗
+
+private struct OCRProgressOverlay: View {
+    @ObservedObject var vm: FolderRenameViewModel
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.15)
+                Text("OCR 実行中")
+                    .font(.headline)
+                Text("\(vm.ocrProgressCurrent) / \(vm.ocrProgressTotal)")
+                    .font(.title2.monospacedDigit())
+                    .foregroundStyle(.primary)
+                Text(vm.ocrCurrentFileName.isEmpty ? "準備中…" : vm.ocrCurrentFileName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
+                    .textSelection(.enabled)
+            }
+            .padding(28)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+        }
+        .allowsHitTesting(true)
     }
 }
 

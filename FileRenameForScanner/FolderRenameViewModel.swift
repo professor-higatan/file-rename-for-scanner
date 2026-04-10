@@ -22,6 +22,10 @@ final class FolderRenameViewModel: ObservableObject {
     @Published var structureOnlyForSelectedFiles: Bool = false
     @Published var lastResultMessage: String = ""
     @Published var isRunningOCR: Bool = false
+    /// OCR 進捗（1〜total）。順次処理で更新する。
+    @Published var ocrProgressCurrent: Int = 0
+    @Published var ocrProgressTotal: Int = 0
+    @Published var ocrCurrentFileName: String = ""
 
     var selectedFile: ScannedFile? {
         guard let u = selectedFileURL else { return nil }
@@ -241,25 +245,41 @@ final class FolderRenameViewModel: ObservableObject {
     }
 
     private func runOCR(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        ocrProgressTotal = urls.count
+        ocrProgressCurrent = 0
+        ocrCurrentFileName = ""
         isRunningOCR = true
-        let group = DispatchGroup()
-        for u in urls {
-            group.enter()
-            VisionPageNumberService.suggestPageHints(from: u) { hints in
-                Task { @MainActor in
-                    if let i = self.files.firstIndex(where: { $0.url == u }) {
-                        self.files[i].suggestedPageNumber = hints.arabic
-                        self.files[i].suggestedRomanValue = hints.romanValue
-                        self.files[i].suggestedRomanRaw = hints.romanRaw
-                    }
-                    group.leave()
+
+        Task { @MainActor in
+            defer {
+                isRunningOCR = false
+                ocrCurrentFileName = ""
+                ocrProgressCurrent = 0
+                ocrProgressTotal = 0
+            }
+
+            for (idx, u) in urls.enumerated() {
+                ocrProgressCurrent = idx + 1
+                ocrCurrentFileName = u.lastPathComponent
+                let hints = await fetchPageHints(from: u)
+                if let i = files.firstIndex(where: { $0.url == u }) {
+                    files[i].suggestedPageNumber = hints.arabic
+                    files[i].suggestedRomanValue = hints.romanValue
+                    files[i].suggestedRomanRaw = hints.romanRaw
                 }
             }
-        }
-        group.notify(queue: .main) {
-            self.isRunningOCR = false
-            self.lastResultMessage =
+
+            lastResultMessage =
                 "OCR 完了（\(urls.count) 件）。通しはスキャン順で固定。表示ページは OCR または手入力で調整してください。"
+        }
+    }
+
+    private func fetchPageHints(from url: URL) async -> PageOCRHints {
+        await withCheckedContinuation { continuation in
+            VisionPageNumberService.suggestPageHints(from: url) { hints in
+                continuation.resume(returning: hints)
+            }
         }
     }
 }
